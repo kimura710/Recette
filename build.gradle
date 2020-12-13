@@ -5,6 +5,8 @@ plugins {
 	id 'war'
 }
 
+
+
 group = 'com.example'
 version = '0.0.1-SNAPSHOT'
 sourceCompatibility = '11'
@@ -34,6 +36,10 @@ dependencies {
 	providedRuntime 'org.springframework.boot:spring-boot-starter-tomcat'
 	testImplementation 'org.springframework.boot:spring-boot-starter-test'
 	testImplementation 'org.springframework.security:spring-security-test'
+	 providedRuntime 'org.springframework.boot:spring-boot-starter-tomcat'
+}
+configurations {
+    providedRuntime
 }
 
 test {
