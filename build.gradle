@@ -22,6 +22,7 @@ configurations {
 repositories {
 	mavenCentral()
 }
+defaultTasks 'test'
 
 dependencies {
 	implementation 'org.springframework.boot:spring-boot-starter-data-jpa'
