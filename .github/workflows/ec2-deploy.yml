@@ -32,10 +32,10 @@ on:
 env:
   EC2_USER: 'ec2-user'
   EC2_HOST: 'ec2-54-65-185-249.ap-northeast-1.compute.amazonaws.com'
-  SRC_PATH: 'build/libs/*.jar'
+  SRC_PATH: 'build/libs/*.war'
   DEST_DIR: '/var/apps'
 
-  APP_NAME: 'Portfolio01'
+  APP_NAME: 'Portfolio01-0.0.1-SNAPSHOT'
   JAVA_VERSION: '11'
   JAVA_OPTS: '-Xms1024M -Xmx1024M'
   RUN_ARGS: '--spring.profiles.active=prod'
