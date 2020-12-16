@@ -35,7 +35,7 @@ env:
   SRC_PATH: 'build/libs/*.jar'
   DEST_DIR: '/var/apps'
 
-  APP_NAME: 'Portfolio01-0.0.1-SNAPSHOT'
+  APP_NAME: 'Portfolio01'
   JAVA_VERSION: '11'
   JAVA_OPTS: '-Xms1024M -Xmx1024M'
   RUN_ARGS: '--spring.profiles.active=prod'
