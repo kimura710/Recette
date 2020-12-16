@@ -1,0 +1,129 @@
+# This workflow will build and push a new container image to Amazon ECR,
+# and then will deploy a new task definition to Amazon ECS, when a release is created
+#
+# To use this workflow, you will need to complete the following set-up steps:
+#
+# 1. Create an ECR repository to store your images.
+#    For example: `aws ecr create-repository --repository-name my-ecr-repo --region us-east-2`.
+#    Replace the value of `ECR_REPOSITORY` in the workflow below with your repository's name.
+#    Replace the value of `aws-region` in the workflow below with your repository's region.
+#
+# 2. Create an ECS task definition, an ECS cluster, and an ECS service.
+#    For example, follow the Getting Started guide on the ECS console:
+#      https://us-east-2.console.aws.amazon.com/ecs/home?region=us-east-2#/firstRun
+#    Replace the values for `service` and `cluster` in the workflow below with your service and cluster names.
+#
+# 3. Store your ECS task definition as a JSON file in your repository.
+#    The format should follow the output of `aws ecs register-task-definition --generate-cli-skeleton`.
+#    Replace the value of `task-definition` in the workflow below with your JSON file's name.
+#    Replace the value of `container-name` in the workflow below with the name of the container
+#    in the `containerDefinitions` section of the task definition.
+#
+# 4. Store an IAM user access key in GitHub Actions secrets named `AWS_ACCESS_KEY_ID` and `AWS_SECRET_ACCESS_KEY`.
+#    See the documentation for each action used below for the recommended IAM policies for this IAM user,
+#    and best practices on handling the access key credentials.
+
+name: Gradle build and Deploy to ec2
+
+on:
+  push:
+    branches: [ master ]
+
+env:
+  EC2_USER: 'ec2-user'
+  EC2_HOST: 'ec2-54-65-185-249.ap-northeast-1.compute.amazonaws.com'
+  SRC_PATH: 'build/libs/*.jar'
+  DEST_DIR: '/var/apps'
+
+  APP_NAME: 'Recette'
+  JAVA_VERSION: '11'
+  JAVA_OPTS: '-Xms1024M -Xmx1024M'
+  RUN_ARGS: '--spring.profiles.active=prod'
+
+jobs:
+  deploy:
+    name: Gradle build and Deploy to ec2
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v2
+
+    - name: Set up JDK.
+      uses: actions/setup-java@v1
+      with:
+        java-version: ${{ env.JAVA_VERSION }}
+
+    - name: Grant execute permission for gradlew
+      run: chmod +x gradlew
+    - name: Build with Gradle
+      run: ./gradlew build
+
+    - name: SCP EC2 Copy app file
+      env:
+        PRIVATE_KEY: ${{ secrets.AWS_EC2_PRIVATE_KEY }}
+      run: |
+        echo "$PRIVATE_KEY" > private_key && chmod 600 private_key
+        ssh -t -o StrictHostKeyChecking=no -i private_key ${EC2_USER}@${EC2_HOST} "sudo mkdir -p $DEST_DIR/$APP_NAME && sudo chmod -R 777 $DEST_DIR/$APP_NAME"
+        scp -i private_key ${SRC_PATH} ${EC2_USER}@${EC2_HOST}:${DEST_DIR}/${APP_NAME}/${APP_NAME}.jar
+
+    - name: SSH EC2 Setup and Deploy
+      uses: appleboy/ssh-action@v0.0.9
+      with:
+        key: ${{ secrets.AWS_EC2_PRIVATE_KEY }}
+        username: ${{ env.EC2_USER }}
+        host: ${{ env.EC2_HOST }}
+        envs: DEST_DIR,JAVA_VERSION,APP_NAME,JAVA_OPTS,RUN_ARGS
+        script: |
+          echo "===== yum update ====="
+          sudo yum update -y
+          echo "===== check java install ====="
+          if java -version 2>&1 >/dev/null | grep "java version\|openjdk version" ; then
+            echo "already installed java."
+          else
+            echo "install java."
+            TARGET=$(yum search java | grep "$JAVA_VERSION.*devel\." | awk '{print $1}')
+            echo "install target name -> $TARGET"
+            sudo yum install -y ${TARGET}
+            echo "JAVA_HOME=$(readlink -f /usr/bin/java | sed "s:bin/java::")" | sudo tee -a   /etc/profile
+            source /etc/profile
+          fi
+          echo "===== check conf file ====="
+          if [ -f ${DEST_DIR}/${APP_NAME}/${APP_NAME}.conf ]; then
+          echo "already exist conf file for $APP_NAME"
+          else
+          echo "create conf file for $APP_NAME"
+          cat <<EOL | sudo tee -a ${DEST_DIR}/${APP_NAME}/${APP_NAME}.conf
+          export LANG="ja_JP.UTF8"
+          JAVA_OPTS="$JAVA_OPTS"
+          RUN_ARGS="$RUN_ARGS"
+          EOL
+          fi
+          echo "===== check exist service file ====="
+          if [ -f /etc/systemd/system/${APP_NAME}.service ]; then
+          echo "already exist service file for $APP_NAME"
+          else
+          echo "create service file for $APP_NAME"
+          cat <<EOL | sudo tee -a  /etc/systemd/system/${APP_NAME}.service
+          [Unit]
+          Description = ${APP_NAME} app
+
+          [Service]
+          ExecStart =  ${DEST_DIR}/${APP_NAME}/${APP_NAME}.jar
+          Restart = always
+          Type = simple
+          User = root
+          Group = root
+          SuccessExitStatus = 143
+
+          [Install]
+          WantedBy = multi-user.target
+          EOL
+          fi
+          echo "===== application (re)start ====="
+          sudo systemctl daemon-reload
+          if sudo systemctl status ${APP_NAME} 2>&1 | grep "Active: active (running)" ; then
+            echo "${APP_NAME} app restart!!"
+            sudo systemctl restart ${APP_NAME}
+          else
+            echo "${APP_NAME} app start!!"
+            sudo systemctl start ${APP_NAME}
+          fi
